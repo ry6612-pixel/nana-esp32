@@ -1,0 +1,68 @@
+# Build output
+target/
+.embuild/
+
+# Local dev workspace (logs, scripts, test outputs)
+.local-dev/
+
+# IDE
+.vscode/
+*.code-workspace
+
+# Cargo lock (optional for binaries, keep for reproducibility)
+# Cargo.lock
+
+# ESP-IDF generated
+components_esp32s3.lock
+
+# === SECRETS — NEVER COMMIT ===
+user_config.txt
+ESP_config_backup/
+*.env
+
+# Temp/debug files
+*.txt
+!user_config.example.txt
+*.log
+*.py
+!build.rs
+
+# 註:camera_bindings.h / sr_bindings.h 曾被列在這裡並註記為 auto-generated,
+# 那是誤解 —— 它們是 Cargo.toml 指定給 bindgen 的**手寫輸入檔**(各 3~8 行的
+# #include 包裝),不是產物。被 ignore 的後果是任何人 clone 下來必定編譯失敗,
+# 而且要等 ESP-IDF 整套下載編譯完(約 40 分鐘)才會看到 header does not exist。
+
+# Scripts (local dev helpers)
+*.ps1
+!build.ps1
+!flash.ps1
+!provision.ps1
+!setup-secure-config.ps1
+!pre-publish-scan.ps1
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Backups
+*.bak
+src/main_*.rs
+src/*.rs.v*
+*.corrupted
+
+# Binary outputs
+*.bin
+*.elf
+# 例外:中文點陣字型是專案素材,不是編譯產物(韌體 include_bytes! 直接吃它)
+!assets/font16.bin
+
+# OTA artifacts
+ota_serve/
+Novaclaw-release.zip
+
+# Android build outputs
+android/app/build/
+android/build/
+android/.gradle/
+android/local.properties
+*.apk

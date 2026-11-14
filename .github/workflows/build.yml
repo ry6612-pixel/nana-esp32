@@ -1,0 +1,46 @@
+# 每次推送都在全新環境編一次 —— 等同自動模擬「另一台電腦 clone 下來能不能編」。
+#
+# 這個 workflow 存在的理由:本機有 .embuild 快取、有裝好的工具鏈、有沒進版控的
+# 檔案,所以本機編得過完全不代表別人編得過。實際發生過的例子:
+# camera_bindings.h / sr_bindings.h 被 .gitignore 擋住,本機一直是好的,
+# 任何人 clone 下來都必定失敗,而且要等 ESP-IDF 整套下載編譯完才看得到錯誤。
+name: build
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      # ESP-IDF 整套下載+編譯很久,快取住才不會每次都等 40 分鐘
+      - name: Cache ESP-IDF and cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.espressif
+            .embuild
+          key: esp-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'sdkconfig.defaults') }}
+          restore-keys: esp-${{ runner.os }}-
+
+      - uses: esp-rs/xtensa-toolchain@v1.5
+        with:
+          default: true
+          buildtargets: esp32s3
+          ldproxy: true
+
+      # --locked:CI 不准自己更新 Cargo.lock。會動到鎖檔就是依賴漂移,
+      # 那正是我們要擋下來的東西,不是要默默接受的東西。
+      - name: Build
+        run: cargo build --release --locked
+
+      - name: Show image size
+        run: ls -lh target/xtensa-esp32s3-espidf/release/esp32

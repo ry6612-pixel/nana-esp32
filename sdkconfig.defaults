@@ -1,0 +1,149 @@
+# ZeroClaw ESP32-S3 standalone AI firmware - ESP-IDF config
+
+# Main task stack: 48KB (BLE coexistence needs more free internal SRAM)
+CONFIG_MAIN_TASK_STACK_SIZE=49152
+
+# pthread default stack (reduced from 8KB to save internal SRAM)
+CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT=4096
+CONFIG_ESP_TIMER_TASK_STACK_SIZE=4096
+
+# Allow thread stacks in PSRAM when internal RAM is low
+CONFIG_SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY=y
+
+# Relax watchdog budgets for TLS-heavy network requests on ESP32-S3
+CONFIG_ESP_INT_WDT=y
+CONFIG_ESP_INT_WDT_TIMEOUT_MS=1600
+CONFIG_ESP_TASK_WDT=y
+# 60s (Kconfig max; 90 gets silently rejected back to the 5s default!):
+# the main task is now REGISTERED in the task WDT (main.rs), and a single
+# Gemini/TLS call can block 10-60s, so http_get/http_post feed on entry.
+# 60s still catches true deadlocks without killing slow-but-alive requests.
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=60
+# WDT trigger must PANIC (which then reboots via PANIC_PRINT_REBOOT below).
+# Without this the task WDT only prints a backtrace and the device stays hung.
+CONFIG_ESP_TASK_WDT_PANIC=y
+
+# 7x24 unattended device: any panic must reboot instead of halting forever.
+CONFIG_ESP_SYSTEM_PANIC_PRINT_REBOOT=y
+
+# Browser requests with cookies easily exceed the 512-byte default header
+# buffer -> httpd returns "431 Request Header Fields Too Large" on the portal.
+CONFIG_HTTPD_MAX_REQ_HDR_LEN=1024
+
+# Enable PSRAM (board has 8MB)
+CONFIG_ESP32S3_SPIRAM_SUPPORT=y
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+
+# Allow malloc to use PSRAM
+CONFIG_SPIRAM_USE_MALLOC=y
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=4096
+
+# Custom partition table for OTA
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_OFFSET=0x8000
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
+# Flash size: 16MB (ESP32-S3 N16R8)
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+
+# HTTPS support
+CONFIG_ESP_TLS_USING_MBEDTLS=y
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL=y
+
+# mbedTLS allocates from PSRAM (external). Software AES/SHA below already run
+# from regular heap, so TLS working buffers (~40KB per handshake) can leave
+# internal SRAM entirely. Fixes "wifi:m f null" packet drops when the config
+# portal + MJPEG stream + TLS all run at once.
+CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
+
+# Let WiFi/LWIP try PSRAM first for its buffers to keep internal SRAM free.
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+
+# More sockets: httpd portal (up to 4+ctrl) + Telegram TLS long-poll + NTP/DNS
+# + MJPEG listener+client can exceed the default 10 -> new connections get RST.
+CONFIG_LWIP_MAX_SOCKETS=16
+
+# Software AES instead of the hardware accelerator.
+# The HW AES (esp-aes) path allocates DMA descriptors from internal RAM only;
+# with camera + WakeNet + BLE + WiFi all resident, internal RAM is exhausted and
+# TLS handshakes fail with "esp-aes: Failed to allocate memory" (no Telegram/Gemini).
+# Software AES runs from the regular heap (can live in PSRAM); slightly slower
+# crypto, but unblocks all HTTPS. Correctness beats a few ms on a chat device.
+# NOTE: keep this file ASCII-only -- the Kconfig parser reads it as cp950 on
+# zh-TW Windows and chokes on UTF-8 bytes.
+CONFIG_MBEDTLS_HARDWARE_AES=n
+
+# Software SHA for the same reason as AES above. The HW SHA accelerator (esp-sha)
+# also allocates its working buffer from internal DMA RAM; once camera keep-alive
+# and WakeNet load, the TLS DRBG/handshake SHA alloc fails ("esp-sha: Failed to
+# allocate buf memory" -> ctr_drbg_seed -0x0034 -> Poll error HTTP_CONNECT).
+# Moving SHA to software (regular heap, PSRAM-capable) lets Telegram polling and
+# Gemini calls keep working after boot, not just the first boot notification.
+CONFIG_MBEDTLS_HARDWARE_SHA=n
+
+# BLE (NimBLE) for mobile provisioning
+CONFIG_BT_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y
+CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1
+CONFIG_BT_NIMBLE_ROLE_PERIPHERAL=y
+CONFIG_BT_NIMBLE_ROLE_BROADCASTER=y
+CONFIG_BT_NIMBLE_ROLE_CENTRAL=n
+CONFIG_BT_NIMBLE_ROLE_OBSERVER=n
+CONFIG_BT_NIMBLE_GAP_DEVICE_NAME_MAX_LEN=32
+CONFIG_BT_NIMBLE_ATT_PREFERRED_MTU=128
+CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL=y
+CONFIG_BT_NIMBLE_MSYS_1_BLOCK_COUNT=2
+CONFIG_BT_NIMBLE_MSYS_1_BLOCK_SIZE=64
+
+# WiFi + BT coexistence
+CONFIG_ESP_COEX_SW_COEXIST_ENABLE=y
+
+# Keep the camera on INTERNAL-RAM DMA (PSRAM DMA corrupts JPEG frames on this
+# OV3660 board: cam_hal "NO-SOI/NO-EOI marker missing" even at 10MHz XCLK).
+# The camera is held keep-alive (grabs its 16KB DMA block at boot); to leave
+# room for TLS sockets we trim the WiFi static/dynamic buffers below.
+
+# Trim WiFi buffers to free internal RAM for the keep-alive camera + TLS sockets.
+# Static RX 10->4 and dynamic counts 32->16 reclaim ~20-30KB of internal SRAM.
+# Throughput drops slightly (irrelevant for a chat/notify device).
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=4
+# BA window must be <= 2x static RX buffers (compile-time check in wifi_init.c)
+CONFIG_ESP_WIFI_RX_BA_WIN=4
+CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=16
+CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER_NUM=16
+CONFIG_ESP_WIFI_CACHE_TX_BUFFER_NUM=16
+
+# ESP-SR: Wake word detection (local, offline)
+CONFIG_USE_WAKENET=y
+CONFIG_SR_WN_WN9_HIESP=y
+CONFIG_SR_WN_WN9_HIESP=y
+
+# ===== Camera I2C (SCCB) driver: DO NOT add CONFIG_SCCB_* here as-is =====
+# NOTE: this file is read by kconfgen with the system ANSI codepage, so it must
+# stay pure ASCII. Non-ASCII bytes fail the build with UnicodeDecodeError.
+#
+# Background: board_hw.rs opens I2C1 with esp-idf-hal's LEGACY I2cDriver
+# (ES8311 / PCA9557). ESP-IDF's legacy i2c driver has a startup check
+# (components/driver/i2c/i2c.c, __attribute__((constructor))) that calls abort()
+# if the NEW i2c driver is linked in as well. This check EXISTS ALREADY in
+# v5.2.3 -- it simply does not fire here, because esp32-camera 2.1.5 as resolved
+# by this exact pin does not pull the new driver in.
+#
+# Why the failure mode is nasty if it ever does fire: the check runs BEFORE
+# app_main, so there is no log output at all, the LCD keeps showing the previous
+# firmware's GRAM contents (looks completely normal), and espflash still reports
+# a successful flash. It presents as "flashed new firmware, screen did not change".
+#
+# Adding CONFIG_SCCB_HARDWARE_I2C_DRIVER_LEGACY=y / CONFIG_SCCB_HARDWARE_I2C_PORT0=y
+# was TESTED here and it BREAKS this build: the camera component stops being
+# enabled and ~16 unrelated-looking type-inference errors appear in main.rs.
+# Those symbols behave differently across esp32-camera versions.
+#
+# What actually protects us is pinning the exact combination in Cargo.toml
+# (esp_idf_version v5.2.3 + esp32-camera 2.1.5 + esp-sr 2.4.6), all verified on
+# real hardware. If you ever bump any of those, re-verify the camera on device
+# and only then revisit the SCCB options.

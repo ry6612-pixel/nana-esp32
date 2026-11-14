@@ -1,0 +1,53 @@
+# ============================================
+# Novaclaw User Configuration
+# ============================================
+#
+# STEP 1: Recommended secure setup
+#         Windows: .\setup-secure-config.ps1
+#         Secure path: %USERPROFILE%\.novaclaw\secrets\user_config.txt
+#
+# STEP 2: Fill in YOUR settings below
+#
+# STEP 3: Build & Flash
+#         .\build.ps1          (Windows)
+#
+# ============================================
+# Security note:
+# - Do NOT keep real secrets in the repo folder.
+# - build.ps1 and provision.ps1 will REFUSE to run if user_config.txt exists in the repo root.
+# - Secrets must be stored externally: %USERPROFILE%\.novaclaw\secrets\user_config.txt
+# - You can also set NOVACLAW_CONFIG environment variable to a custom path.
+
+# ===== WiFi (Required — at least WiFi 1) =====
+# Primary WiFi network
+WIFI_SSID     = "YourWiFiName"
+WIFI_PASS     = "YourWiFiPassword"
+
+# Backup WiFi 2~5 (optional — auto-failover when primary drops)
+WIFI_SSID2    = ""
+WIFI_PASS2    = ""
+
+WIFI_SSID3    = ""
+WIFI_PASS3    = ""
+
+WIFI_SSID4    = ""
+WIFI_PASS4    = ""
+
+WIFI_SSID5    = ""
+WIFI_PASS5    = ""
+
+# ===== Telegram Bot (Required) =====
+# 1. Open Telegram, search @BotFather → /newbot → copy the token
+# 2. Search @userinfobot → get your Chat ID
+TG_TOKEN      = ""
+CHAT_ID       = ""
+
+# ===== Gemini API Key (Required) =====
+# Get yours free at: https://aistudio.google.com/apikey
+GEMINI_KEY    = ""
+
+# ===== Advanced (Optional) =====
+# Resend email API (for /email command)
+# EMAIL_API_KEY = ""
+# EMAIL_FROM    = ""
+# EMAIL_TO      = ""

@@ -1,0 +1,97 @@
+# 打 tag 就自動產出單檔韌體並發 Release。
+#
+#   git tag v5.3.0 && git push --tags
+#
+# 附帶好處:CI 用全新環境,等於每次發版都自動驗證一次「乾淨機器編得出來」。
+#
+# ⚠️ 產出的 BIN 是從 0x0 開始的整片 flash 映像,涵蓋 NVS(0x9000)。
+#    燒它會清空該板的 WiFi/金鑰/Telegram 綁定/記憶 —— 那是「全新板子一次到位」
+#    要的行為。更新已設定好的板子請只燒 app 分割區(見 flash.ps1)。
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache ESP-IDF and cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.espressif
+            .embuild
+          key: esp-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'sdkconfig.defaults') }}
+          restore-keys: esp-${{ runner.os }}-
+
+      - uses: esp-rs/xtensa-toolchain@v1.5
+        with:
+          default: true
+          buildtargets: esp32s3
+          ldproxy: true
+
+      # 4.0.1 會把合法的 app descriptor 誤判為缺失,要 4.5.0 以上
+      - name: Install espflash
+        run: cargo install espflash --version 4.5.0 --locked
+
+      - run: cargo build --release --locked
+
+      # --flash-size 16mb 不能省:預設當成 4MB,分割表塞不下會直接失敗
+      # --skip-padding 不能省:否則檔案會被補滿成 16MB(實際只用約 3MB)
+      - name: Build single-file image
+        run: |
+          espflash save-image --chip esp32s3 --flash-size 16mb --merge --skip-padding \
+            --partition-table partitions.csv \
+            target/xtensa-esp32s3-espidf/release/esp32 \
+            NANA-${{ github.ref_name }}.bin
+
+          # --merge 只合 bootloader + 分割表 + app，不含 data 分割區。語音喚醒模型
+          # 住在 model 分割區(0x420000)，不補進去的話燒完開機就是
+          # "ESP-SR init failed: No WakeNet model found in partition"。
+          # 找到多份就報錯，不要默默取第一個 —— 切換過 ESP-IDF 版本會留下舊產物，
+          # 挑錯一份等於燒了一個「看起來成功但喚醒詞是舊模型」的映像。
+          MODEL_COUNT=$(find target -name srmodels.bin | wc -l)
+          if [ "$MODEL_COUNT" -eq 0 ]; then echo "找不到 srmodels.bin"; exit 1; fi
+          if [ "$MODEL_COUNT" -gt 1 ]; then
+            echo "找到 $MODEL_COUNT 份 srmodels.bin，無法判斷該用哪一份："
+            find target -name srmodels.bin
+            exit 1
+          fi
+          MODEL=$(find target -name srmodels.bin)
+          python3 tools/inject_partition.py NANA-${{ github.ref_name }}.bin \
+            --from-partitions partitions.csv --partition model --data-file "$MODEL"
+
+          ls -lh NANA-${{ github.ref_name }}.bin
+
+      # 映像做好之後把它拆開驗一次，確保四個關鍵區段都真的在裡面。
+      # 不驗的話，下次有人改了 espflash 參數，壞掉的映像會靜靜地發出去。
+      - name: Verify image layout
+        run: |
+          MODEL=$(find target -name srmodels.bin)
+          python3 tools/verify_image.py NANA-${{ github.ref_name }}.bin partitions.csv "$MODEL"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: NANA-${{ github.ref_name }}.bin
+          body: |
+            ## 燒錄方式
+
+            **全新板子**（一次寫入 bootloader + 分割表 + 韌體）：
+            ```
+            espflash write-bin -p COM8 0x0 NANA-${{ github.ref_name }}.bin
+            ```
+            燒完開機會自動發出 `NANA-XXXX` 熱點，手機連上照螢幕指示設定即可。
+
+            **更新已經設定好的板子**：不要用這個檔。
+            這是整片 flash 映像，會把 NVS 一起清掉（WiFi／Gemini 金鑰／Telegram
+            綁定／記憶／提醒全部消失）。請改用 `flash.ps1`，那個只寫 app 分割區。
