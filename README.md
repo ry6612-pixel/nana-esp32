@@ -82,6 +82,28 @@ Everything — camera capture, scheduling, the web console, Telegram, retries, m
 
 ---
 
+## Real-world test: reading a live game's scoreboard
+
+We pointed NANA at a monitor running a League of Legends match and told it: *every minute, read the player's K/D/A and log it.* A game is a harder test than a gauge — the digits are tiny, the screen never stops moving, and the camera was mounted sideways at an angle.
+
+Below is the **unedited log** it wrote, one row per reading, each with the exact frame it judged (columns: time · K/D/A · full reply · read OK · frame):
+
+<p align="center"><img src="docs/demo/game-kda-log.png" width="760" alt="NANA's reading log for a live match"></p>
+
+- The first rows say *"can't see it"* — the match hadn't started yet. It didn't invent a number.
+- One row came back in English instead of digits — the model hesitating. It's recorded as a failed read, not guessed.
+- The last row, **4/5/14**, is the frame below — the K/D/A in the top bar matches the log exactly:
+
+<p align="center">
+  <img src="docs/demo/game-kda-frame.jpg" width="300" alt="The raw camera frame behind the 4/5/14 reading">
+  <img src="docs/demo/game-kda-zoom.png" width="420" alt="Zoom on the K/D/A: 4/5/14">
+</p>
+<p align="center"><sub>Raw frame from the device camera (rotated upright; highlight added). Keeping the photo next to every reading is what makes the log checkable — numbers on their own always look plausible.</sub></p>
+
+<sub>League of Legends is a trademark of Riot Games, Inc. NANA isn't endorsed by Riot Games and isn't affiliated with it.</sub>
+
+---
+
 ## See it
 
 > Real screenshots of the web console served by the device. The UI is currently in Traditional Chinese — translations are a great first contribution.
