@@ -14,7 +14,9 @@ on:
 
 jobs:
   firmware:
-    runs-on: ubuntu-latest
+    # 固定 24.04:ubuntu-latest 換成 26.04 後,ESP-IDF v5.2 的工具在新系統上跑不起來
+    # (embuild 驗證工具版本失敗 → "Could not install all requested Tools")。
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
@@ -31,8 +33,8 @@ jobs:
           key: esp-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'sdkconfig.defaults') }}
           restore-keys: esp-${{ runner.os }}-
 
-      # ESP-IDF v5.2 的 idf_tools.py 不支援 runner 預設的 Python 3.14(工具全下載解壓完仍回報
-      # "Could not install all requested Tools")。固定 3.12;embuild 會用 PATH 上的 python3。
+      # ESP-IDF v5.2 的 idf_tools.py 在 Python 3.14 會出 tarfile 棄用警告;固定 3.12,
+      # 不讓 runner 預設版本的變動影響建置。embuild 會用 PATH 上的 python3。
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
