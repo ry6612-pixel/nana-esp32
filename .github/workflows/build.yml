@@ -31,9 +31,17 @@ jobs:
           key: esp-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'sdkconfig.defaults') }}
           restore-keys: esp-${{ runner.os }}-
 
+      # ESP-IDF v5.2 的 idf_tools.py 不支援 runner 預設的 Python 3.14(工具全下載解壓完仍回報
+      # "Could not install all requested Tools")。固定 3.12;embuild 會用 PATH 上的 python3。
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # 工具鏈版本固定成本機實際在用的那一版,避免 action 自動抓最新版造成「本機過、CI 掛」。
       - uses: esp-rs/xtensa-toolchain@v1.5
         with:
           default: true
+          version: '1.93.0.0'
           buildtargets: esp32s3
           ldproxy: true
 
